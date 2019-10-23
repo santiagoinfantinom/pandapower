@@ -113,12 +113,16 @@ def from_pypsa(pnet,t_series = False):
         profiles = pd.DataFrame()
         for i in range(0,len(pandasnet.load['name'])):
             name = pandasnet.load['name'][i]
-            profiles[name + '_p'] = pnet.loads_t['p_set'][pandasnet.load['name'][i]]
-            profiles[name + '_q'] = pnet.loads_t['q_set'][pandasnet.load['name'][i]]
+            if name in pnet.loads_t['p_set']:
+                profiles[name + '_p'] = pnet.loads_t['p_set'][pandasnet.load['name'][i]]
+            if name in pnet.loads_t['q_set']:
+                profiles[name + '_q'] = pnet.loads_t['q_set'][pandasnet.load['name'][i]]
         for j in range(0,len(pandasnet.sgen['name'])):
             name = pandasnet.sgen['name'][i]
-            profiles[name + '_p'] = pnet.generators_t['p_set'][pandasnet.sgen['name'][j]]
-            profiles[name + '_q'] = pnet.generators_t['q_set'][pandasnet.sgen['name'][j]]
+            if name in pnet.generators_t['p_set']:
+                profiles[name + '_p'] = pnet.generators_t['p_set'][pandasnet.sgen['name'][j]]
+            if name in pnet.generators_t['q_set']:
+                profiles[name + '_q'] = pnet.generators_t['q_set'][pandasnet.sgen['name'][j]]
 
         ds = pp.timeseries.DFData(profiles)
 
@@ -159,11 +163,11 @@ def from_pypsa(pnet,t_series = False):
     def create_output_writer(net, time_steps, output_dir):
         ow = OutputWriter(net, time_steps, output_path=output_dir, output_file_type=".json")
         # these variables are saved to the harddisk after / during the time series loop
-        #Buses voltages and Ströme Leitungen vergleichen. Peingang Pausgang (Leitungen) B
-        ow.log_variable('res_load', 'p_mw')
-        ow.log_variable('res_load', 'q_mvar')
-        ow.log_variable('res_sgen', 'p_mw')
-        ow.log_variable('res_sgen', 'q_mvar')
+        #Buses voltages and Ströme Leitungen vergleichen. P_eingang P_ausgang (Leitungen)
+        ow.log_variable('res_bus', 'v_mag')
+        ow.log_variable('res_bus', 'va_degree')
+        ow.log_variable('res_line', 'p_from_mw')
+        ow.log_variable('res_line', 'p_to_mw')
         return ow
 
     def convert_time_series_data():
@@ -193,16 +197,65 @@ def from_pypsa(pnet,t_series = False):
 
     return net
 
-def check_results_equal(pnet, net):
+def check_results_equal(pnet, net, t_series = False):
     pv = pnet.buses_t.v_mag_pu.loc["now"]
     assert np.allclose(pv.loc[net.bus.name].values, net.res_bus.vm_pu.values)
     pa = pnet.buses_t.v_ang.loc["now"] * 180. / np.pi
     assert np.allclose(pa.loc[net.bus.name].values, net.res_bus.va_degree.values)
+    if t_series == True:
+        res_v_ts = []
+        for i in range(0,len(pnet.snapshots)):
+            res_v_ts.append(pnet.buses_t.v_mag_pu.iloc[i])
+
 
 if __name__ == '__main__':
 
+    edisgo_pnet= pypsa.Network()
+
+    edisgo_pnet.import_from_csv_folder('/home/user/PycharmProjectsRLI/edisgo/results/nep_worst_case/pypsa_network')
+
+    edisgo_net = from_pypsa(edisgo_pnet,True)
+
+    """
+    ding0_grid = 'ding0_grid_example.pkl'
+
+    worst_case_analysis = 'worst-case'
+
+    edisgo = EDisGo(ding0_grid=ding0_grid,
+                    worst_case_analysis=worst_case_analysis)
+
+    edisgo_pypsa = pypsa_io.to_pypsa(edisgo.network, None, timesteps=edisgo.network.timeseries.timeindex)
+
+    edisgo_net = from_pypsa(edisgo_pypsa,True)
+
+
+        ding0_grid = 'ding0_grid_example.pkl'
+
+        worst_case_analysis = 'worst-case'
+
+        edisgo = EDisGo(ding0_grid=ding0_grid,
+                    worst_case_analysis=worst_case_analysis)
+
+        edisgo_pypsa = pypsa_io.to_pypsa(edisgo.network, None, timesteps=edisgo.network.timeseries.timeindex)
+
+
     mv_grid_districts = [460]
     ding0_grid = 'ding0_grid_example.pkl'
+
+    worst_case_analysis = 'worst-case'
+
+    edisgo = EDisGo(ding0_grid=ding0_grid,
+                    worst_case_analysis=worst_case_analysis)
+
+    edisgo_pypsa = pypsa_io.to_pypsa(edisgo.network, None, timesteps=edisgo.network.timeseries.timeindex)
+
+    edisgo_net = from_pypsa(edisgo_pypsa)
+
+    edisgo.analyze()
+
+    edisgo_net = from_pypsa(edisgo_pypsa)
+    edisgo_net
+
 
     engine = db.connection(section='oedb')
     session = sessionmaker(bind=engine)()
@@ -214,12 +267,6 @@ if __name__ == '__main__':
 
     save_nd_to_pickle(nd, filename=ding0_grid)
 
-    worst_case_analysis = 'worst-case'
-
-    edisgo = EDisGo(ding0_grid=ding0_grid,
-                    worst_case_analysis=worst_case_analysis)
-
-    """
     timeindex = pd.date_range('1/1/2011', periods=4, freq='H')
     timeseries_generation_dispatchable = \
         pd.DataFrame({'other': [1] * len(timeindex)},
@@ -230,14 +277,9 @@ if __name__ == '__main__':
         timeseries_generation_fluctuating='oedb',
         timeseries_generation_dispatchable=timeseries_generation_dispatchable,
         timeindex=timeindex)
-    """
+
     timeindex = pd.date_range('1/1/2011', periods=4, freq='H')
 
-    edisgo_pypsa = pypsa_io.to_pypsa(edisgo.network,None,timesteps=)
-    edisgo_net = from_pypsa(edisgo_pypsa)
-
-    edisgo_net
-    """
     edisgo_pnet= pypsa.Network()
     edisgo_pnet.import_from_csv_folder('/home/user/PycharmProjectsRLI/edisgo/results/nep_worst_case/pypsa_network')
     edisgo_net = from_pypsa(edisgo_pnet)
@@ -248,7 +290,7 @@ if __name__ == '__main__':
     net = from_pypsa(pnet)
     pp.create_ext_grid(net, 0)
     pp.runpp(net, calculate_voltage_angles=True, max_iteration=100)
-   """
 
    # check_results_equal(pnet, net)
 
+"""
