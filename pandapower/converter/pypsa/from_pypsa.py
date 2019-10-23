@@ -12,6 +12,17 @@ from pandapower.timeseries.run_time_series import run_timeseries, control_diagno
 from pandapower.control import ContinuousTapControl, ConstControl
 import tempfile
 
+
+from egoio.tools import db
+from sqlalchemy.orm import sessionmaker
+from ding0.core import NetworkDing0
+from ding0.tools.results import save_nd_to_pickle
+import os
+import sys
+import pandas as pd
+from edisgo import EDisGo
+from edisgo.tools import pypsa_io
+
 def create_pypsa_test_net():
     network = pypsa.Network()
     network.set_snapshots(range(4))
@@ -33,7 +44,7 @@ def create_pypsa_test_net():
 
     return network
 
-def from_pypsa(pnet):
+def from_pypsa(pnet,t_series = False):
 
     def convert_buses():
         net.bus["name"] = pnet.buses.index.values
@@ -102,12 +113,12 @@ def from_pypsa(pnet):
         profiles = pd.DataFrame()
         for i in range(0,len(pandasnet.load['name'])):
             name = pandasnet.load['name'][i]
-            profiles[name + '_p'] = pnet.loads_t['p'][pandasnet.load['name'][i]]
-            profiles[name + '_q'] = pnet.loads_t['q'][pandasnet.load['name'][i]]
+            profiles[name + '_p'] = pnet.loads_t['p_set'][pandasnet.load['name'][i]]
+            profiles[name + '_q'] = pnet.loads_t['q_set'][pandasnet.load['name'][i]]
         for j in range(0,len(pandasnet.sgen['name'])):
             name = pandasnet.sgen['name'][i]
-            profiles[name + '_p'] = pnet.loads_t['p'][pandasnet.sgen['name'][j]]
-            profiles[name + '_q'] = pnet.loads_t['q'][pandasnet.sgen['name'][j]]
+            profiles[name + '_p'] = pnet.generators_t['p_set'][pandasnet.sgen['name'][j]]
+            profiles[name + '_q'] = pnet.generators_t['q_set'][pandasnet.sgen['name'][j]]
 
         ds = pp.timeseries.DFData(profiles)
 
@@ -148,6 +159,7 @@ def from_pypsa(pnet):
     def create_output_writer(net, time_steps, output_dir):
         ow = OutputWriter(net, time_steps, output_path=output_dir, output_file_type=".json")
         # these variables are saved to the harddisk after / during the time series loop
+        #Buses voltages and Ströme Leitungen vergleichen. Peingang Pausgang (Leitungen) B
         ow.log_variable('res_load', 'p_mw')
         ow.log_variable('res_load', 'q_mvar')
         ow.log_variable('res_sgen', 'p_mw')
@@ -174,10 +186,10 @@ def from_pypsa(pnet):
     convert_trafos()
     convert_loads()
 
-    n_timesteps = len(pnet.snapshots)
-    time_steps = range(0, n_timesteps)
-
-    convert_time_series_data()
+    if t_series == True:
+        n_timesteps = len(pnet.snapshots)
+        time_steps = range(0, n_timesteps)
+        convert_time_series_data()
 
     return net
 
@@ -189,11 +201,48 @@ def check_results_equal(pnet, net):
 
 if __name__ == '__main__':
 
+    mv_grid_districts = [460]
+    ding0_grid = 'ding0_grid_example.pkl'
+
+    engine = db.connection(section='oedb')
+    session = sessionmaker(bind=engine)()
+
+    nd = NetworkDing0(name='network')
+
+    nd.run_ding0(session=session,
+    mv_grid_districts_no=mv_grid_districts)
+
+    save_nd_to_pickle(nd, filename=ding0_grid)
+
+    worst_case_analysis = 'worst-case'
+
+    edisgo = EDisGo(ding0_grid=ding0_grid,
+                    worst_case_analysis=worst_case_analysis)
+
+    """
+    timeindex = pd.date_range('1/1/2011', periods=4, freq='H')
+    timeseries_generation_dispatchable = \
+        pd.DataFrame({'other': [1] * len(timeindex)},
+                     index=timeindex)
+    edisgo = EDisGo(
+        ding0_grid=ding0_grid,
+        timeseries_load='demandlib',
+        timeseries_generation_fluctuating='oedb',
+        timeseries_generation_dispatchable=timeseries_generation_dispatchable,
+        timeindex=timeindex)
+    """
+    timeindex = pd.date_range('1/1/2011', periods=4, freq='H')
+
+    edisgo_pypsa = pypsa_io.to_pypsa(edisgo.network,None,timesteps=)
+    edisgo_net = from_pypsa(edisgo_pypsa)
+
+    edisgo_net
+    """
     edisgo_pnet= pypsa.Network()
     edisgo_pnet.import_from_csv_folder('/home/user/PycharmProjectsRLI/edisgo/results/nep_worst_case/pypsa_network')
     edisgo_net = from_pypsa(edisgo_pnet)
 
-    """
+
     pnet = pypsa.Network()
     pnet = create_pypsa_test_net()
     net = from_pypsa(pnet)
