@@ -128,11 +128,61 @@ def from_pypsa(pnet,t_series = False):
 
         return profiles,ds
 
+    def convert_ts_profiles2(pandasnet):
+        """
+         Creates Profiles for load_p, load_q, sgen_p, and sgen_q with
+         their respective timeseries' values
+         """
+        prof_load_p = pd.DataFrame()
+        prof_load_q = pd.DataFrame()
+        prof_sgen_p = pd.DataFrame()
+        prof_sgen_q = pd.DataFrame()
+
+        for i in range(0, len(pandasnet.load['name'])):
+            name = pandasnet.load['name'][i]
+            if name in pnet.loads_t['p_set']:
+                prof_load_p[name + '_p'] = pnet.loads_t['p_set'][pandasnet.load['name'][i]]
+            if name in pnet.loads_t['q_set']:
+                prof_load_q[name + '_q'] = pnet.loads_t['q_set'][pandasnet.load['name'][i]]
+        for j in range(0, len(pandasnet.sgen['name'])):
+            name = pandasnet.sgen['name'][i]
+            if name in pnet.generators_t['p_set']:
+                prof_sgen_p[name + '_p'] = pnet.generators_t['p_set'][pandasnet.sgen['name'][j]]
+            if name in pnet.generators_t['q_set']:
+                prof_sgen_q[name + '_q'] = pnet.generators_t['q_set'][pandasnet.sgen['name'][j]]
+
+        #Convert profiles to the proper pandapower DFData format
+        ds_load_p = pp.timeseries.DFData(prof_load_p.reset_index(drop=True))
+        ds_load_q = pp.timeseries.DFData(prof_load_q.reset_index(drop=True))
+        ds_sgen_p =pp.timeseries.DFData(prof_sgen_p.reset_index(drop=True))
+        ds_sgen_q =pp.timeseries.DFData(prof_sgen_q.reset_index(drop=True))
+
+        ds = [ds_load_p,ds_load_q,ds_sgen_p, ds_sgen_q]
+        return ds
+
     def create_controllers(data_source):
         """
-        Converts the load/gen profiles from pypsta into Panda profiles and DFData
+        Converts the load/gen profiles from pypsa into Panda profiles and DFData
         """
         ds = data_source
+
+        for i in range(0,len(ds.df.columns)):
+            if 'load' or 'Load' in ds.df.columns[i]:
+                if '_p' in ds.df.columns[i]:
+                    ConstControl(net, 'load', 'p_mw', element_index=i,
+                                      data_source=ds, profile_name=ds.df.columns[i])
+                if '_q' in ds.df.columns[i]:
+                    ConstControl(net, 'load', 'q_mvar', element_index=i,
+                                      data_source=ds, profile_name=ds.df.columns[i])
+            elif 'gen' or 'Gen' in ds.df.columns[i]:
+                if '_p' in ds.df.columns[i]:
+                    ConstControl(net, 'sgen', 'p_mw', element_index=i,
+                                      data_source=ds, profile_name=ds.df.columns[i])
+                if '_q' in ds.df.columns[i]:
+                    ConstControl(net, 'sgen', 'q_mvar', element_index=i,
+                                      data_source=ds, profile_name=ds.df.columns[i])
+
+        """
         load_names = []
         load_elems = []
         sgen_names = []
@@ -143,22 +193,30 @@ def from_pypsa(pnet,t_series = False):
         for j in range(0, net['sgen'].shape[0]):
             sgen_names.append(net.sgen['name'][j])
             sgen_elems.append(i)
+        """
 
-        for i in range(0,len(ds.df.columns)):
-            if 'load' in ds.df.columns[i]:
-                if '_p' in ds.df.columns[i]:
-                    ConstControl(net, 'load', 'p_mw', element_index=i,
-                                      data_source=ds, profile_name=ds.df.columns[i])
-                if '_q' in ds.df.columns[i]:
-                    ConstControl(net, 'load', 'q_mvar', element_index=i,
-                                      data_source=ds, profile_name=ds.df.columns[i])
-            elif 'gen' in ds.df.columns[i]:
-                if '_p' in ds.df.columns[i]:
-                    ConstControl(net, 'sgen', 'p_mw', element_index=i,
-                                      data_source=ds, profile_name=ds.df.columns[i])
-                if '_q' in ds.df.columns[i]:
-                    ConstControl(net, 'sgen', 'q_mvar', element_index=i,
-                                      data_source=ds, profile_name=ds.df.columns[i])
+    def create_controllers_2(ds):
+        """
+        Uses the created datasources to create 1 controller per profile for all loads/sgens
+        """
+        ds_load_p, ds_load_q, ds_sgen_p, ds_sgen_q = ds
+        cont_loads_p = ConstControl(net, element='load', element_index=net.load.index,
+                                    variable='p_mw',
+                                    data_source=ds_load_p, profile_name=list(ds_load_p.df.columns),
+                                    level=0)
+
+        cont_loads_q = ConstControl(net, element='load', element_index=net.load.index,
+                                    variable='q_mvar', data_source=ds_load_q, profile_name=net.load.index,
+                                    level = 1)
+
+        cont_sgen_p = ConstControl(net, element='sgen', element_index=net.sgen.index,
+                                    variable='p_mw', data_source=ds_sgen_p, profile_name=net.sgen.index,
+                                   level = 2)
+
+        cont_sgen_q = ConstControl(net, element='sgen', element_index=net.sgen.index,
+                                    variable='q_mvar', data_source=ds_sgen_q, profile_name=net.sgen.index,
+                                   level = 3)
+
 
     def create_output_writer(net, time_steps, output_dir):
         ow = OutputWriter(net, time_steps, output_path=output_dir, output_file_type=".json")
@@ -168,12 +226,13 @@ def from_pypsa(pnet,t_series = False):
         ow.log_variable('res_bus', 'va_degree')
         ow.log_variable('res_line', 'p_from_mw')
         ow.log_variable('res_line', 'p_to_mw')
+        ow.log_variable('res_line', 'i_ka')
         return ow
 
     def convert_time_series_data():
         #profiles, ds = create_data_source()
-        profiles, ds = convert_ts_profiles(net)
-        create_controllers(ds)
+        ds = convert_ts_profiles2(net)
+        create_controllers_2(ds)
         output_dir = os.path.join(tempfile.gettempdir(), "time_series_example")
         print("Results can be found in your local temp folder: {}".format(output_dir))
         if not os.path.exists(output_dir):
@@ -210,11 +269,16 @@ def check_results_equal(pnet, net, t_series = False):
 
 if __name__ == '__main__':
 
+    #TODO: Cuadrar la creacion de profiles (2344 en ves de 2345 elementos) Donde se pierde uno?
+    #TODO: Check Results equal for time series
+
     edisgo_pnet= pypsa.Network()
 
     edisgo_pnet.import_from_csv_folder('/home/user/PycharmProjectsRLI/edisgo/results/nep_worst_case/pypsa_network')
 
     edisgo_net = from_pypsa(edisgo_pnet,True)
+
+    check_results_equal(edisgo_pnet,edisgo_net)
 
     """
     ding0_grid = 'ding0_grid_example.pkl'
