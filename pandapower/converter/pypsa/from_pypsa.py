@@ -44,7 +44,7 @@ def create_pypsa_test_net():
 
     return network
 
-def from_pypsa(pnet,t_series = False):
+def from_pypsa(pnet):
 
     def convert_buses():
         net.bus["name"] = pnet.buses.index.values
@@ -200,28 +200,29 @@ def from_pypsa(pnet,t_series = False):
         Uses the created datasources to create 1 controller per profile for all loads/sgens
         """
         ds_load_p, ds_load_q, ds_sgen_p, ds_sgen_q = ds
-        cont_loads_p = ConstControl(net, element='load', element_index=net.load.index,
+
+        if not ds_load_p.df.empty:
+            cont_loads_p = ConstControl(net, element='load', element_index=net.load.index,
                                     variable='p_mw',
                                     data_source=ds_load_p, profile_name=list(ds_load_p.df.columns),
                                     level=0)
-
-        cont_loads_q = ConstControl(net, element='load', element_index=net.load.index,
-                                    variable='q_mvar', data_source=ds_load_q, profile_name=net.load.index,
+        if not ds_load_q.df.empty:
+            cont_loads_q = ConstControl(net, element='load', element_index=net.load.index,
+                                    variable='q_mvar', data_source=ds_load_q, profile_name=list(ds_load_q.df.columns),
                                     level = 1)
-
-        cont_sgen_p = ConstControl(net, element='sgen', element_index=net.sgen.index,
-                                    variable='p_mw', data_source=ds_sgen_p, profile_name=net.sgen.index,
+        if not ds_sgen_p.df.empty:
+            cont_sgen_p = ConstControl(net, element='sgen', element_index=net.sgen.index,
+                                    variable='p_mw', data_source=ds_sgen_p, profile_name=list(ds_sgen_p.df.columns),
                                    level = 2)
-
-        cont_sgen_q = ConstControl(net, element='sgen', element_index=net.sgen.index,
-                                    variable='q_mvar', data_source=ds_sgen_q, profile_name=net.sgen.index,
+        if not ds_sgen_q.df.empty:
+            cont_sgen_q = ConstControl(net, element='sgen', element_index=net.sgen.index,
+                                    variable='q_mvar', data_source=ds_sgen_q, profile_name=list(ds_sgen_q.df.columns),
                                    level = 3)
 
 
     def create_output_writer(net, time_steps, output_dir):
         ow = OutputWriter(net, time_steps, output_path=output_dir, output_file_type=".json")
         # these variables are saved to the harddisk after / during the time series loop
-        #Buses voltages and Ströme Leitungen vergleichen. P_eingang P_ausgang (Leitungen)
         ow.log_variable('res_bus', 'v_mag')
         ow.log_variable('res_bus', 'va_degree')
         ow.log_variable('res_line', 'p_from_mw')
@@ -249,7 +250,7 @@ def from_pypsa(pnet,t_series = False):
     convert_trafos()
     convert_loads()
 
-    if t_series == True:
+    if len(pnet.snapshots) != 0:
         n_timesteps = len(pnet.snapshots)
         time_steps = range(0, n_timesteps)
         convert_time_series_data()
@@ -267,58 +268,11 @@ def check_results_equal(pnet, net, t_series = False):
             res_v_ts.append(pnet.buses_t.v_mag_pu.iloc[i])
 
 
-if __name__ == '__main__':
-
-    #TODO: Cuadrar la creacion de profiles (2344 en ves de 2345 elementos) Donde se pierde uno?
-    #TODO: Check Results equal for time series
-
-    edisgo_pnet= pypsa.Network()
-
-    edisgo_pnet.import_from_csv_folder('/home/user/PycharmProjectsRLI/edisgo/results/nep_worst_case/pypsa_network')
-
-    edisgo_net = from_pypsa(edisgo_pnet,True)
-
-    check_results_equal(edisgo_pnet,edisgo_net)
+def edisgo_test():
+    ding0_grid = 'ding0_grid_example.pkl'
 
     """
-    ding0_grid = 'ding0_grid_example.pkl'
-
-    worst_case_analysis = 'worst-case'
-
-    edisgo = EDisGo(ding0_grid=ding0_grid,
-                    worst_case_analysis=worst_case_analysis)
-
-    edisgo_pypsa = pypsa_io.to_pypsa(edisgo.network, None, timesteps=edisgo.network.timeseries.timeindex)
-
-    edisgo_net = from_pypsa(edisgo_pypsa,True)
-
-
-        ding0_grid = 'ding0_grid_example.pkl'
-
-        worst_case_analysis = 'worst-case'
-
-        edisgo = EDisGo(ding0_grid=ding0_grid,
-                    worst_case_analysis=worst_case_analysis)
-
-        edisgo_pypsa = pypsa_io.to_pypsa(edisgo.network, None, timesteps=edisgo.network.timeseries.timeindex)
-
-
     mv_grid_districts = [460]
-    ding0_grid = 'ding0_grid_example.pkl'
-
-    worst_case_analysis = 'worst-case'
-
-    edisgo = EDisGo(ding0_grid=ding0_grid,
-                    worst_case_analysis=worst_case_analysis)
-
-    edisgo_pypsa = pypsa_io.to_pypsa(edisgo.network, None, timesteps=edisgo.network.timeseries.timeindex)
-
-    edisgo_net = from_pypsa(edisgo_pypsa)
-
-    edisgo.analyze()
-
-    edisgo_net = from_pypsa(edisgo_pypsa)
-    edisgo_net
 
 
     engine = db.connection(section='oedb')
@@ -326,35 +280,59 @@ if __name__ == '__main__':
 
     nd = NetworkDing0(name='network')
 
-    nd.run_ding0(session=session,
-    mv_grid_districts_no=mv_grid_districts)
+    #nd.run_ding0(session=session,
+    #mv_grid_districts_no=mv_grid_districts)
 
     save_nd_to_pickle(nd, filename=ding0_grid)
+    """
+
+    worst_case_analysis = 'worst-case'
 
     timeindex = pd.date_range('1/1/2011', periods=4, freq='H')
-    timeseries_generation_dispatchable = \
-        pd.DataFrame({'other': [1] * len(timeindex)},
+    # load time series (scaled by annual demand)
+    timeseries_load = pd.DataFrame({'residential': [0.0001] * len(timeindex),
+                                    'retail': [0.0002] * len(timeindex),
+                                    'industrial': [0.0015] * len(timeindex),
+                                    'agricultural': [0.00005] * len(timeindex)},
+                                   index=timeindex)
+
+    # feed-in time series of fluctuating generators (scaled by nominal power)
+    timeseries_generation_fluctuating = \
+        pd.DataFrame({'solar': [0.2] * len(timeindex),
+                      'wind': [0.3] * len(timeindex)},
                      index=timeindex)
+    # feed-in time series of dispatchable generators (scaled by nominal power)
+    timeseries_generation_dispatchable = \
+        pd.DataFrame({'biomass': [1] * len(timeindex),
+                      'coal': [1] * len(timeindex),
+                      'other': [1] * len(timeindex)},
+                     index=timeindex)
+
     edisgo = EDisGo(
-        ding0_grid=ding0_grid,
-        timeseries_load='demandlib',
-        timeseries_generation_fluctuating='oedb',
+        ding0_grid="ding0_grid_example.pkl",
+        timeseries_load=timeseries_load,
+        timeseries_generation_fluctuating=timeseries_generation_fluctuating,
         timeseries_generation_dispatchable=timeseries_generation_dispatchable,
         timeindex=timeindex)
 
-    timeindex = pd.date_range('1/1/2011', periods=4, freq='H')
+    edisgo_pypsa = pypsa_io.to_pypsa(edisgo.network, None, timesteps=edisgo.network.timeseries.timeindex)
+    edisgo_pypsa.t_series = True
+    #edisgo.analyze()
+    edisgo_net = from_pypsa(edisgo_pypsa)
 
-    edisgo_pnet= pypsa.Network()
-    edisgo_pnet.import_from_csv_folder('/home/user/PycharmProjectsRLI/edisgo/results/nep_worst_case/pypsa_network')
-    edisgo_net = from_pypsa(edisgo_pnet)
 
+if __name__ == '__main__':
 
+    #TODO: Check Results equal for time series
+    #TODO: Check ERROR:pandapower.timeseries.output_writer:Error at index [0, 1, 2] for res_bus[v_mag]: 'the label [v_mag] is not in the [columns]'
+    #TODO Check UserWarning: Generators with different voltage setpoints connected to the same bus
+
+    edisgo_test()
     pnet = pypsa.Network()
     pnet = create_pypsa_test_net()
     net = from_pypsa(pnet)
     pp.create_ext_grid(net, 0)
     pp.runpp(net, calculate_voltage_angles=True, max_iteration=100)
 
-   # check_results_equal(pnet, net)
+    check_results_equal(pnet, net)
 
-"""
