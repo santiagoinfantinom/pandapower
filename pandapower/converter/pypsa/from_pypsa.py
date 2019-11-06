@@ -35,11 +35,7 @@ def create_pypsa_test_net():
     network.add("Generator", "External Grid", bus="MV bus", control="Slack")
     network.add("Load", "LV load", bus="LV2 bus", p_set=0.1, q_set=0.0, sign=-1)
     network.add("Load", "static gen", bus="LV2 bus", p_set=0.2, q_set=0.07, sign=1)
-# Added another Load and dynamic gen. To test the functionality of the controllers
-    network.add("Load", "LV load 2", bus="LV2 bus", p_set=0.1, q_set=0.0, sign=-1)
-    network.add("Load", "static gen 2", bus="LV2 bus", p_set=0.2, q_set=0.07, sign=1)
-    network.lpf(network.snapshots)
-    network.pf(use_seed=True)
+    #network.pf(use_seed=True)
 
 
     return network
@@ -139,6 +135,7 @@ def from_pypsa(pnet):
         prof_sgen_q = pd.DataFrame()
 
         for i in range(0, len(pandasnet.load['name'])):
+            # Append timeseries profile to dataframe
             name = pandasnet.load['name'][i]
             if name in pnet.loads_t['p_set']:
                 prof_load_p[name + '_p'] = pnet.loads_t['p_set'][pandasnet.load['name'][i]]
@@ -151,7 +148,7 @@ def from_pypsa(pnet):
             if name in pnet.generators_t['q_set']:
                 prof_sgen_q[name + '_q'] = pnet.generators_t['q_set'][pandasnet.sgen['name'][j]]
 
-        #Convert profiles to the proper pandapower DFData format
+        #Convert profiles to the proper pandapower DFData format. Resets index of rows to convert timeseries indexing into discrete steps
         ds_load_p = pp.timeseries.DFData(prof_load_p.reset_index(drop=True))
         ds_load_q = pp.timeseries.DFData(prof_load_q.reset_index(drop=True))
         ds_sgen_p =pp.timeseries.DFData(prof_sgen_p.reset_index(drop=True))
@@ -219,11 +216,10 @@ def from_pypsa(pnet):
                                     variable='q_mvar', data_source=ds_sgen_q, profile_name=list(ds_sgen_q.df.columns),
                                    level = 3)
 
-
     def create_output_writer(net, time_steps, output_dir):
         ow = OutputWriter(net, time_steps, output_path=output_dir, output_file_type=".json")
         # these variables are saved to the harddisk after / during the time series loop
-        ow.log_variable('res_bus', 'v_mag')
+        ow.log_variable('res_bus', 'vm_pu')
         ow.log_variable('res_bus', 'va_degree')
         ow.log_variable('res_line', 'p_from_mw')
         ow.log_variable('res_line', 'p_to_mw')
@@ -239,8 +235,7 @@ def from_pypsa(pnet):
         if not os.path.exists(output_dir):
             os.mkdir(output_dir)
         ow = create_output_writer(net, time_steps, output_dir)
-
-        run_timeseries(net, time_steps, numba=True, output_writer=ow)
+        run_timeseries(net, time_steps, numba=False, output_writer=ow)
 
     net = pp.create_empty_network()
     convert_buses()
@@ -267,21 +262,19 @@ def check_results_equal(pnet, net, t_series = False):
         for i in range(0,len(pnet.snapshots)):
             res_v_ts.append(pnet.buses_t.v_mag_pu.iloc[i])
 
-
 def edisgo_test():
-    ding0_grid = 'ding0_grid_example.pkl'
 
+    ding0_grid = 'ding0_grid_example.pkl'
     """
     mv_grid_districts = [460]
-
 
     engine = db.connection(section='oedb')
     session = sessionmaker(bind=engine)()
 
     nd = NetworkDing0(name='network')
 
-    #nd.run_ding0(session=session,
-    #mv_grid_districts_no=mv_grid_districts)
+    nd.run_ding0(session=session,
+    mv_grid_districts_no=mv_grid_districts)
 
     save_nd_to_pickle(nd, filename=ding0_grid)
     """
@@ -310,29 +303,44 @@ def edisgo_test():
 
     edisgo = EDisGo(
         ding0_grid="ding0_grid_example.pkl",
-        timeseries_load=timeseries_load,
-        timeseries_generation_fluctuating=timeseries_generation_fluctuating,
+        timeseries_load="demandlib",
+        timeseries_generation_fluctuating="oedb",
         timeseries_generation_dispatchable=timeseries_generation_dispatchable,
         timeindex=timeindex)
 
     edisgo_pypsa = pypsa_io.to_pypsa(edisgo.network, None, timesteps=edisgo.network.timeseries.timeindex)
     edisgo_pypsa.t_series = True
-    #edisgo.analyze()
+
     edisgo_net = from_pypsa(edisgo_pypsa)
+
+    """
+    edisgo_pypsa.lpf()
+    now = edisgo_pypsa.snapshots[0]
+    angle_diff = pd.Series(edisgo_pypsa.buses_t.v_ang.loc[now, edisgo_pypsa.lines.bus0].values -
+                           edisgo_pypsa.buses_t.v_ang.loc[now, edisgo_pypsa.lines.bus1].values,
+                           index=edisgo_pypsa.lines.index)
+    
+    (angle_diff * 180 / np.pi).describe()
+    """
+    edisgo.analyze()
+    Res_edisgo = edisgo.network.results
+    #check_results_equal()
 
 
 if __name__ == '__main__':
 
     #TODO: Check Results equal for time series
     #TODO: Check ERROR:pandapower.timeseries.output_writer:Error at index [0, 1, 2] for res_bus[v_mag]: 'the label [v_mag] is not in the [columns]'
-    #TODO Check UserWarning: Generators with different voltage setpoints connected to the same bus
+    #TODO Check ValueError: Power flow analysis did not converge.
 
     edisgo_test()
+    """
     pnet = pypsa.Network()
     pnet = create_pypsa_test_net()
     net = from_pypsa(pnet)
     pp.create_ext_grid(net, 0)
     pp.runpp(net, calculate_voltage_angles=True, max_iteration=100)
+    """
 
-    check_results_equal(pnet, net)
+    #check_results_equal(pnet, net)
 
