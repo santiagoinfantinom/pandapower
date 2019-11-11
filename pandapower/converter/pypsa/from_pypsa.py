@@ -237,6 +237,8 @@ def from_pypsa(pnet):
         ow = create_output_writer(net, time_steps, output_dir)
         run_timeseries(net, time_steps, numba=False, output_writer=ow)
 
+
+
     net = pp.create_empty_network()
     convert_buses()
     bus_lookup = dict(zip(net.bus.name, net.bus.index))
@@ -250,17 +252,41 @@ def from_pypsa(pnet):
         time_steps = range(0, n_timesteps)
         convert_time_series_data()
 
+
+
     return net
 
+def import_pandapower_results(path):
+    res_lines = pd.read_json(path + 'lines')
+
+
+def convert_res_to_dataframe():
+    output_dir = os.path.join(tempfile.gettempdir(), "time_series_example")
+    vm_pu = pd.read_json(output_dir+"/res_bus/vm_pu.json",orient='records')
+    va_degree = pd.read_json(output_dir+"/res_bus/va_degree.json",orient='records')
+    p_from_mw = pd.read_json(output_dir+"/res_line/p_from_mw.json")
+    p_to_mw = pd.read_json(output_dir+"/res_line/p_to_mw.json")
+    i_ka = pd.read_json(output_dir+"/res_line/i_ka.json")
+    results = [vm_pu, va_degree, p_from_mw, p_to_mw, i_ka]
+    return results
+
 def check_results_equal(pnet, net, t_series = False):
-    pv = pnet.buses_t.v_mag_pu.loc["now"]
-    assert np.allclose(pv.loc[net.bus.name].values, net.res_bus.vm_pu.values)
-    pa = pnet.buses_t.v_ang.loc["now"] * 180. / np.pi
-    assert np.allclose(pa.loc[net.bus.name].values, net.res_bus.va_degree.values)
+    if "now" in pnet.buses_t.v_mag_pu.index:
+        pv = pnet.buses_t.v_mag_pu.loc["now"]
+        assert np.allclose(pv.loc[net.bus.name].values, net.res_bus.vm_pu.values)
+        pa = pnet.buses_t.v_ang.loc["now"] * 180. / np.pi
+        assert np.allclose(pa.loc[net.bus.name].values, net.res_bus.va_degree.values)
     if t_series == True:
-        res_v_ts = []
-        for i in range(0,len(pnet.snapshots)):
-            res_v_ts.append(pnet.buses_t.v_mag_pu.iloc[i])
+        #Sortieren und vergleichen oder DF direkt vergleichen
+        #Storage place for edisgo network
+        assert np.allclose(pnet.buses_t.v_mag_pu.values,net.results[0].values)
+        assert np.allclose(pnet.buses_t.v_ang.values, net.results[1].values)
+        assert np.allclose(pnet.lines_t.p0.values, net.results[2].values)
+        assert np.allclose(pnet.lines_t.p1.values, net.results[3].values)
+
+        #TODO i_ka for pnet
+        #assert np.allclose(pnet.lines_t.v_ang.values, net.results[4].values)
+
 
 def edisgo_test():
 
@@ -311,28 +337,22 @@ def edisgo_test():
     edisgo_pypsa = pypsa_io.to_pypsa(edisgo.network, None, timesteps=edisgo.network.timeseries.timeindex)
     edisgo_pypsa.t_series = True
 
-    edisgo_net = from_pypsa(edisgo_pypsa)
+    edisgo_panda = from_pypsa(edisgo_pypsa)
 
-    """
-    edisgo_pypsa.lpf()
-    now = edisgo_pypsa.snapshots[0]
-    angle_diff = pd.Series(edisgo_pypsa.buses_t.v_ang.loc[now, edisgo_pypsa.lines.bus0].values -
-                           edisgo_pypsa.buses_t.v_ang.loc[now, edisgo_pypsa.lines.bus1].values,
-                           index=edisgo_pypsa.lines.index)
-    
-    (angle_diff * 180 / np.pi).describe()
-    """
-    edisgo.analyze()
-    Res_edisgo = edisgo.network.results
-    #check_results_equal()
+    #edisgo.analyze()
+    #Res_edisgo = edisgo.network.results
+    edisgo_pypsa.pf(edisgo_pypsa.snapshots)
+    edisgo_panda.results = convert_res_to_dataframe()
+    check_results_equal(edisgo_pypsa,edisgo_panda, True)
+
+
 
 
 if __name__ == '__main__':
 
     #TODO: Check Results equal for time series
-    #TODO: Check ERROR:pandapower.timeseries.output_writer:Error at index [0, 1, 2] for res_bus[v_mag]: 'the label [v_mag] is not in the [columns]'
-    #TODO Check ValueError: Power flow analysis did not converge.
-
+    #TODO: Read json file to dataframe, compare both dataframes
+    pandapower_results_path = 'x'
     edisgo_test()
     """
     pnet = pypsa.Network()
