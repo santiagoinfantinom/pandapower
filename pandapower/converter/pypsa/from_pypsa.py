@@ -150,7 +150,13 @@ def from_pypsa(pnet):
 
         #Convert profiles to the proper pandapower DFData format. Resets index of rows to convert timeseries indexing into discrete steps
         ds_load_p = pp.timeseries.DFData(prof_load_p.reset_index(drop=True))
+        columns = dict(map(reversed, enumerate(ds_load_p.df.columns)))
+        ds_load_p.df = ds_load_p.df.rename(columns=columns)
+
         ds_load_q = pp.timeseries.DFData(prof_load_q.reset_index(drop=True))
+        columns = dict(map(reversed, enumerate(ds_load_q.df.columns)))
+        ds_load_q.df = ds_load_q.df.rename(columns=columns)
+
         ds_sgen_p =pp.timeseries.DFData(prof_sgen_p.reset_index(drop=True))
         ds_sgen_q =pp.timeseries.DFData(prof_sgen_q.reset_index(drop=True))
 
@@ -201,7 +207,7 @@ def from_pypsa(pnet):
         if not ds_load_p.df.empty:
             cont_loads_p = ConstControl(net, element='load', element_index=net.load.index,
                                     variable='p_mw',
-                                    data_source=ds_load_p, profile_name=list(ds_load_p.df.columns),
+                                    data_source=ds_load_p, profile_name=net.load.index,
                                     level=0)
         if not ds_load_q.df.empty:
             cont_loads_q = ConstControl(net, element='load', element_index=net.load.index,
@@ -237,8 +243,6 @@ def from_pypsa(pnet):
         ow = create_output_writer(net, time_steps, output_dir)
         run_timeseries(net, time_steps, numba=False, output_writer=ow)
 
-
-
     net = pp.create_empty_network()
     convert_buses()
     bus_lookup = dict(zip(net.bus.name, net.bus.index))
@@ -251,19 +255,12 @@ def from_pypsa(pnet):
         n_timesteps = len(pnet.snapshots)
         time_steps = range(0, n_timesteps)
         convert_time_series_data()
-
-
-
     return net
-
-def import_pandapower_results(path):
-    res_lines = pd.read_json(path + 'lines')
-
 
 def convert_res_to_dataframe():
     output_dir = os.path.join(tempfile.gettempdir(), "time_series_example")
-    vm_pu = pd.read_json(output_dir+"/res_bus/vm_pu.json",orient='records')
-    va_degree = pd.read_json(output_dir+"/res_bus/va_degree.json",orient='records')
+    vm_pu = pd.read_json(output_dir+"/res_bus/vm_pu.json",orient='index')
+    va_degree = pd.read_json(output_dir+"/res_bus/va_degree.json",orient='index')
     p_from_mw = pd.read_json(output_dir+"/res_line/p_from_mw.json")
     p_to_mw = pd.read_json(output_dir+"/res_line/p_to_mw.json")
     i_ka = pd.read_json(output_dir+"/res_line/i_ka.json")
@@ -287,24 +284,22 @@ def check_results_equal(pnet, net, t_series = False):
         #TODO i_ka for pnet
         #assert np.allclose(pnet.lines_t.v_ang.values, net.results[4].values)
 
-
 def edisgo_test():
-
     ding0_grid = 'ding0_grid_example.pkl'
+
     """
     mv_grid_districts = [460]
-
+    
     engine = db.connection(section='oedb')
     session = sessionmaker(bind=engine)()
-
+    
     nd = NetworkDing0(name='network')
-
+    
     nd.run_ding0(session=session,
     mv_grid_districts_no=mv_grid_districts)
-
+    
     save_nd_to_pickle(nd, filename=ding0_grid)
     """
-
     worst_case_analysis = 'worst-case'
 
     timeindex = pd.date_range('1/1/2011', periods=4, freq='H')
