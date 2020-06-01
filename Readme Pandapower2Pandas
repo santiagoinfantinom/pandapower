@@ -1,0 +1,19 @@
+Change Log
+===========
+
+-[FORKED] A fork was created to expand the functionality of the branch pypsa_converter to include time series analysis
+-[CHANGED] In branch "PyPSA_import_time_series" the converter from "from_pypsa.py" was modified to investigate the difference between Pandapower and Pypsa regardin time-series
+
+Details
+========
+-[ADDED] convert_ts_profiles(pandas_network) and convert_ts_profiles2, which differentiates between load and generation
+
+-[CHANGED] Controllers, Output Writers were modified or complemeted through the creation of new functions that work for the new format
+
+-[ADDED] edisgo_test(). Creates a network based on a ding0 grid, to test the validity of the results
+
+
+Results
+========
+
+The comparison of the values for a power flow using both methods, doesn't yield an equality. Further modifications/analysis of the code are needed.
